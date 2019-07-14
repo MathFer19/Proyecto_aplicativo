@@ -1,0 +1,331 @@
+
+---
+title: "La presencia del Estado: Programa Vaso de leche - 2007"
+author: "Miguel Fernando Quispe Velásquez"
+date: "12/07/2019"
+output: html_document
+---
+
+## Estadística para el análisis político 2 - POL304 <br> 
+ 
+____
+## **La presencia del Estado: Programa Vaso de leche - 2007**
+____
+
+<a id='beginning'></a>
+
+I.  __Índice __
+
+    * [1.Carga de datos](#Carga)
+    * [2.Limpieza de bases de datos](#Limpieza)
+    * [3.Aplicación del merge](#Merge)
+    * [4.Descripción de datos](#Descripcion)
+    * [5.Análisis factorial y de Cluster ](#Cluster) 
+    * [6.Análisis de regresión binomial](#regresion)
+
+####**1.Carga de datos**
+
+<a id='Apertura'></a> 
+
+```{r}
+#paquetes necesarios
+library(openxlsx)
+library("ggpubr")
+library(psych)
+library(lmtest)
+library(DescTools)
+library(rgdal)
+library(leaflet)
+
+#Data Asignación Presupuestal ('datapresu')
+library(openxlsx)
+link1= ("https://docs.google.com/spreadsheets/d/e/2PACX-1vQC4KIMFYUGOcwKhRGLu6SGvQdlhrwTn4GxeyreG654eVn061FXy2pHTUtxwLlN0Q/pub?output=xlsx")
+presu=read.xlsx(link1, 
+                skipEmptyRows = T, skipEmptyCols = T)
+
+#Data Indice de Densidad Estatal ('dataide')
+link2= ("https://docs.google.com/spreadsheets/d/e/2PACX-1vSUGfQ_gc1BQUp9cwS6aSAX9XFcLAuuPlr6Nt1DYy5qzFX6H-zuBBzGsSXSS7aF7Q/pub?output=xlsx")
+dataide=read.xlsx(link2, 
+                skipEmptyRows = T, skipEmptyCols = T)
+
+#Data Pobreza ('datapobreza')
+link3= ("https://docs.google.com/spreadsheets/d/e/2PACX-1vScsrbmeOmr9t1d4OR5kgDhMoOqRO-l45lYSQjcqPpjf39svFiaXjyUpAjobIc13w/pub?output=xlsx")
+pobreza= read.xlsx(link3, skipEmptyRows = T, skipEmptyCols = T)
+
+#Data Elecciones 2006 ('dataelec')
+link4= ("https://docs.google.com/spreadsheets/d/e/2PACX-1vT1GmSKnyLCkskXiWrMA2VyxPi-RNnhbKQfmvxm698CHGvu5O75z9nmlw38p7nfObNNShIQCRWrEura/pub?output=csv")
+dataelec=read.csv(link4, stringsAsFactors = F)
+
+```
+
+
+####**2.Limpieza de la base de datos**
+
+<a id='Limpieza'></a> 
+```{r}
+#Data Asignación Presupuestal ('datapresu')
+names(presu)= c("Ubigeo", "Departamento", "Provincia", "Distrito", "Montoprov") #se asignan nombres
+presu=presu[-c(1:10),] #se eliminan lo innecesario
+presu$Montoprov=as.numeric(presu$Montoprov) #se convierte a numerica
+datapresu=aggregate(presu,
+              by=list(presu$Provincia),
+              FUN=mean) #se promedian los datos para usar las provincias
+datapresu[,2:5]=NULL
+names(datapresu)=c("Provincia","Monto")
+datapresu[40,1]="CARLOS FERMIN FITZCARRALD"#cambiar caracteres distintos
+datapresu[68,1]="DATEM DEL MARAÑON"
+
+#Data Indice de Densidad Estatal ('dataide')
+dataide= dataide[-c(225:228),] #limpieza de casos inncesarios
+columnas=c(1,3,4,seq(5,17,2))
+dataide = dataide[,-columnas]
+dataide=dataide[-c(1:5),]
+names(dataide)= c("Departamento","ScoreIDE","Identidad","Salud","Educacion","Saneamiento","Electrificacion","Provincia")
+dataide[c(2:7)] = lapply(dataide[c(2:7)], as.numeric) #se convierten en numericas
+dataide=dataide[is.na(dataide$Departamento),] #nos quedaremos con esos casos
+dataide$Departamento=NULL
+row.names(dataide)=NULL
+dataide[152,7]="DANIEL ALCIDES CARRION" #cambiar caracteres
+dataide[109,7]="SATIPO"
+dataide$Provincia=as.factor(dataide$Provincia) 
+dataide$Provincia=gsub("\\Á","A",dataide$Provincia) #se cambia las tildes para el merge
+dataide$Provincia=gsub("\\É","E",dataide$Provincia)
+dataide$Provincia=gsub("\\Í","I",dataide$Provincia)
+dataide$Provincia=gsub("\\Ó","O",dataide$Provincia)
+dataide$Provincia=gsub("\\Ú","U",dataide$Provincia)
+
+#Data Pobreza ('datapobreza')
+names(pobreza)= c("Ubigeo", "Provincia","Poblacion", "PobresTotal","PobreExt","PobrezaNoExt", "Nopobre", "Ranking")
+pobreza=pobreza[-c(1:2,2057:2060),] #eliminacion de casos
+datapobreza=pobreza[is.na(pobreza$Ubigeo),] #seleccion de casos
+datapobreza[,c(1,5:8)]=NULL
+datapobreza$Poblacion=gsub("\\ ", "", datapobreza$Poblacion) #eliminacion de caracteres innecesarios
+datapobreza$PobresTotal=gsub("\\ |,", ".",datapobreza$PobresTotal)
+datapobreza[c(2:3)]=lapply(datapobreza[c(2:3)],as.numeric)
+row.names(datapobreza)=NULL
+datapobreza[15,1]="CARLOS FERMIN FITZCARRALD"
+datapobreza$Provincia=as.factor(datapobreza$Provincia)
+datapobreza$Provincia=gsub("\\Á","A",datapobreza$Provincia)
+datapobreza$Provincia=gsub("\\É","E",datapobreza$Provincia)
+datapobreza$Provincia=gsub("\\Í","I",datapobreza$Provincia)
+datapobreza$Provincia=gsub("\\Ó","O",datapobreza$Provincia)
+datapobreza$Provincia=gsub("\\Ú","U",datapobreza$Provincia)
+
+#Data Elecciones 2006 ('dataelec')
+dataelec[,c(4,5)]=NULL
+names(dataelec)= c("Departamento", "Provincia","Votosapra")
+dataelec[95,2]="MARAÑON"
+dataelec[126,2]="FERREÑAFE"
+dataelec[131,2]="CAÑETE"
+dataelec[139,2]= "DATEM DEL MARAÑON"
+dataelec$Votosapra=as.numeric(dataelec$Votosapra)
+
+#Crear nueva variable: Region (Costa-sierra-selva)
+dataelec$Region= "X"
+Costa=c("LIMA","LA LIBERTAD","PIURA","ICA", "LAMBAYEQUE", "CALLAO", "TUMBES", "TACNA", "MOQUEGUA")
+Selva=c("SAN MARTIN","UCAYALI", "LORETO", "MADRE DE DIOS", "AMAZONAS")
+Sierra=c("CUSCO","PASCO","AYACUCHO","HUANUCO","JUNIN", "CAJAMARCA","AREQUIPA","ANCASH","APURIMAC","HUANCAVELICA", "PUNO")
+for(i in 1:length(dataelec$Departamento)){ #se crea la nueva variable
+if(dataelec$Departamento[i] %in% Costa){dataelec$Region[i]="1"}
+  if(dataelec$Departamento[i] %in% Sierra){dataelec$Region[i]="2"}
+  if(dataelec$Departamento[i] %in% Selva){dataelec$Region[i]="3"}
+}
+dataelec$Region=as.factor(dataelec$Region)
+```
+
+####**3.Aplicación del merge**
+
+<a id='Merge'></a> 
+```{r}
+#Merge's:datapresu+dataide +datapobreza  +dataelec
+dataTotal2=merge(datapresu, dataide,key="Provincia")
+dataTotal1=merge(dataTotal2,datapobreza)
+dataTotal=merge(dataTotal1, dataelec,key="Provincia")
+dataTotal=dataTotal[,c(1,11, 13, 2,9,10, 12,3:8)]
+
+#colocar nombres de provincias a las filas
+rownames(dataTotal)=make.names(dataTotal$Provincia, unique = T)
+dataTotal$Provincia=NULL
+```
+
+
+####**4.Descripción de datos**
+
+<a id='Descripcion'></a> 
+```{r}
+str(dataTotal)
+###Criterios técnicos ('PobresTotal')
+
+#grafico de cajas
+library(ggplot2)
+ggplot(data = dataTotal, aes(x=Region, y=PobresTotal))+
+  geom_jitter(aes(color= Region),size=1,alpha=0.7)+
+                geom_boxplot(aes(color=Region),alpha=0.7)+
+                xlab('Region')+
+                ylab('PobresTotal')+
+                ggtitle('pobreza por regiones')+theme_minimal()
+
+summary(dataTotal$PobresTotal)
+
+library("ggpubr")
+ggscatter(dataTotal, x = "PobresTotal", y = "Monto", 
+          add = "reg.line", conf.int = TRUE, 
+          cor.coef = TRUE, cor.method = "pearson",
+          xlab = "PobresTotal", ylab = "Monto", title = 'MONTO-POBREZA', xscale="log10",yscale="log10"
+         )
+
+###criterios populistas(votoapra %)
+summary(dataTotal$Votosapra)
+
+ggscatter(dataTotal, x = "Votosapra", y = "Monto", 
+          add = "reg.line", conf.int = TRUE, 
+          cor.coef = TRUE, cor.method = "pearson",
+          xlab = "Votosapra", ylab = "Monto", title = 'MONTO-VOTOSAPRA',
+          xscale="log10",yscale="log10")
+
+#variable de control: 'poblacion'
+summary(dataTotal$Poblacion)
+        
+ggscatter(dataTotal, x = "Poblacion", y = "Monto", 
+          add = "reg.line", conf.int = TRUE, 
+          cor.coef = TRUE, cor.method = "pearson",
+          xlab = "Poblacion", ylab = "Monto", title = 'MONTO-POBLACIÓN',
+          xscale="log10",yscale="log10")
+
+
+```
+
+
+####**5.Análisis de Factorial y analisis de conglomerados**
+
+<a id='Cluster'></a> 
+
+
+```{r}
+#ANALISIS FACTORIAL: INDICE DE DENSIDAD ESTATAL
+
+#PASO: 1 convertimos las variales independientes a la misma escala con 'scale' y las agrupamos en una data frame
+Indep_IDE=as.data.frame(dataTotal[,c(8:12)])
+#PASO: 2 realizamos la prueba de correlacion de pearson y se grafica
+library(psych)
+PearsonIndepIDE= cor(Indep_IDE)
+
+cor.plot(PearsonIndepIDE, 
+         numbers=T, 
+         upper=F, 
+         main = "Correlacion del Indice de Densidad del Estado", 
+         show.legend = F)
+#PASO: 3 Prueba Kaiser meyer olkin
+KMO(Indep_IDE)
+#PASO: 4 #cuantos indices recomienda la prueba 
+fa.parallel(PearsonIndepIDE, fm="pa", fa="fa", main = "Cantidad de grupos potenciales", n.obs =  nrow(Indep_IDE))
+#PASO: 5 #ANALISIS FACTORIAL
+Indep_F_IDE <- fa(Indep_IDE,nfactors=
+                  1, rotate="varimax")
+#PASO: 6 Asignacion de indices para las variables
+Indep_F_IDE$loadings
+#PASO: 7 ¿Quienes aportan mas?
+sort(Indep_F_IDE$uniquenesses)
+#PASO: 8 Agrupación de las variables por indice y cuanto aportan
+fa.diagram(Indep_F_IDE)
+#PASO: 9 Colocar los scores en una data frame y agregarlo a la datatotal
+Indep_IDE_Scores=as.data.frame(Indep_F_IDE$scores)
+dataTotal= merge (dataTotal, Indep_IDE_Scores, by=0)
+#Como se desconfiguró, tras el merge, se arreglala data frame
+rownames(dataTotal)=make.names(dataTotal$Row.names, unique = T)
+dataTotal$Row.names=NULL
+
+#Se realiza una analisis bivariado entre el IDE y el Monto
+ggscatter(dataTotal, x = "ScoreIDE", y = "Monto", 
+          add = "reg.line", conf.int = TRUE, 
+          cor.coef = TRUE, cor.method = "pearson",
+          xlab = "ScoreIDE", ylab = "Monto", title = 'MONTO-SCOREIDE',
+          xscale="log10",yscale="log10")
+```
+
+```{r}
+#ANÁLISIS DE CONGLOMERADOS
+
+#Se crea una subdata general a fin de almacenar 
+dataTotal->total
+Indep_s=as.data.frame(scale(total[,c(5,6,13)]))
+
+total=merge(total,Indep_s, by=0)
+rownames(total)=make.names(total$Row.names, unique = T)
+total$Row.names=NULL
+
+#agrupación de los casos por parentezco
+data_clus=kmeans(Indep_s,centers = 2)
+table(data_clus$cluster)
+
+#Carga la imagen 
+library(rgdal)
+folderMap= 'provincias'
+fileName= 'PROVINCIAS.shp'
+fileToRead= file.path(folderMap, fileName)
+
+
+peruMap = readOGR (fileToRead, stringsAsFactors = F)
+
+#se combina la información y el mapa en un cluster
+provincia_Clus=as.data.frame(data_clus$cluster)#se combina la información y el mapa en un cluster
+
+names(provincia_Clus)='cluster'
+provincia_Clus$NAME=row.names(provincia_Clus)
+
+names(provincia_Clus)=c("cluster","PROVINCIA")
+
+
+
+#objeto final
+
+peruMap_TOTAL=merge(peruMap, provincia_Clus)#objeto final
+myColors=rainbow(5)
+plot(peruMap,col='GRAY', border=NA)
+plot (peruMap_TOTAL, col=myColors[peruMap_TOTAL$cluster], main='Grupos', border= NA, add=T)
+
+
+#MAPA INTERACTIVO
+ library(leaflet)
+c1=peruMap_TOTAL[!is.na(peruMap_TOTAL$cluster) &                peruMap_TOTAL$cluster==1,]
+c2=peruMap_TOTAL[!is.na(peruMap_TOTAL$cluster) &                peruMap_TOTAL$cluster==2,]
+title="Clusters"
+
+# base Layer
+    base= leaflet() %>% addProviderTiles("CartoDB.Positron") 
+  layer1= base%>%addPolygons(data=c1,color='blue',fillOpacity = 1,stroke = F,group = "1") 
+    layer_12= layer1%>%addPolygons(data=c2,color="red",fillOpacity = 1,stroke = F,group = "2")
+  layer_12
+```
+
+
+####**6.Análisis de regresión lineal**
+
+<a id='regresion'></a> 
+
+```{r}
+#se agrupa las variables para configurarlas en una misma escala
+modelo_1=as.data.frame(scale(dataTotal[,c(3,5:7)]))
+#Se crea el modelo
+modelo_1=lm(Monto~.,data=modelo_1)
+summary(modelo_1)
+#Se observa que la variable que resultó significativa (ScoreIDE), se correlaciona según la prueba de pearson.
+cor.test(dataTotal$Monto, dataTotal$ScoreIDE)
+#Aquello se confirma en que el intervalo de confianza no comprende al 0 entre sus valores.
+confint.lm(modelo_1)
+#Linealidad: la linea sigue tendiendo a ser horizontal; aunque con un pequeño sesgo.
+library(lmtest)
+plot(modelo_1,1)
+#Homocedasticidad
+plot(modelo_1, 2)
+bptest(modelo_1)
+#Normalidad de residuos: se busca rechazar el p valor ya que demuestra la normalidad de los residuos
+plot(modelo_1, 3)
+shapiro.test(modelo_1$residuals)
+# no multicolinelidad
+library(DescTools)
+VIF(modelo_1) # > 5 es problematico
+# Valores influyentes
+plot(modelo_1, 5)
+```
+
